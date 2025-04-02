@@ -11,5 +11,12 @@
             <textarea name="text" rows="5" cols="50"></textarea>
             <input type="submit" />
         </div>
+        
+        @if (!ModelState.IsValid)
+        {
+            <div class="alert alert-danger">
+                @Html.ValidationSummary()
+            </div>
+        }
     </form>
 </div>
