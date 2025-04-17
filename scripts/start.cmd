@@ -1,40 +1,16 @@
 @echo off
-REM 
-chcp 65001 >nul
+title Запуск системы PA3 с 3 потребителями
 
-REM Переход в директорию проекта
-cd /d "C:\Users\User\Documents\Волгатех ПС - 32\Распределенное программирование\ds-2025\Valuator"
+echo Запуск NATS-сервера...
+start "" /D "..\nats-server\" nats-server.exe -DV
 
-REM
-echo Запуск приложения на порту 5001...
-start dotnet run --urls "http://0.0.0.0:5001"
-if %errorlevel% neq 0 (
-    echo Ошибка: Не удалось запустить приложение на порту 5001.
-    exit /b 1
-)
+echo Запуск 3 экземпляров RankCalculator...
+start "RankCalculator 1" /D "..\RankCalculator\" dotnet run
+start "RankCalculator 2" /D "..\RankCalculator\" dotnet run
+start "RankCalculator 3" /D "..\RankCalculator\" dotnet run
 
-echo Запуск приложения на порту 5002...
-start dotnet run --urls "http://0.0.0.0:5002"
-if %errorlevel% neq 0 (
-    echo Ошибка: Не удалось запустить приложение на порту 5002.
-    exit /b 1
-)
+echo Запуск Valuator...
+start "" /D "..\Valuator\" dotnet run --urls "http://0.0.0.0:5001"
 
-REM
-echo Запуск Nginx...
-cd /d C:\nginx-1.27.4
-start nginx
-if %errorlevel% neq 0 (
-    echo Ошибка: Не удалось запустить Nginx.
-    exit /b 1
-)
-
-REM
-timeout /t 2 >nul
-tasklist | findstr "nginx.exe" >nul
-if %errorlevel% neq 0 (
-    echo Ошибка: Nginx не запущен.
-    exit /b 1
-)
-
-echo Все компоненты запущены.
+echo Система запущена. Нажмите Enter для выхода...
+pause

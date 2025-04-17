@@ -1,104 +1,87 @@
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using StackExchange.Redis;
-using System;
+using static System.Net.Mime.MediaTypeNames;
+using NATS.Client;
+using System.Text;
 
-
-// Вынести работу с базой в отдельные репозиории, классы, методы
 namespace Valuator.Pages;
 
 public class IndexModel : PageModel
 {
     private readonly ILogger<IndexModel> _logger;
-    private readonly IConnectionMultiplexer _redis;
+    private readonly IConnectionMultiplexer _redisConnection;
+    private readonly IDatabase _db;
 
-    public IndexModel(ILogger<IndexModel> logger, IConnectionMultiplexer redis)
+    public IndexModel(ILogger<IndexModel> logger, IConnectionMultiplexer redisConnection)
     {
         _logger = logger;
-        _redis = redis;
+        _redisConnection = redisConnection;
+        _db = _redisConnection.GetDatabase();   
     }
 
     public void OnGet()
     {
+
     }
 
     public IActionResult OnPost(string text)
     {
-    _logger.LogDebug($"Input text: '{text}'");
+        _logger.LogDebug(text);
 
-    if (string.IsNullOrWhiteSpace(text))
-    {
-        ModelState.AddModelError(string.Empty, "Ввод текста не может быть пустым.");
-        return Page();
-    }
+        string id = Guid.NewGuid().ToString();
 
-    // text = text.Trim();
-
-    // Приводим текст к нижнему регистру
-    text = text.ToLower();
-
-    // Генерация уникального ID
-    string id = Guid.NewGuid().ToString();
-
-    // Получаем базу данных Redis
-    var db = _redis.GetDatabase();
-
-    // Сохраняем текст в Redis
-    string textKey = "TEXT-" + id;
-    db.StringSet(textKey, text);  // Все пробелы будут учтены
-    _logger.LogDebug($"Text saved with key: {textKey}");
-
-    // Рассчитываем rank и сохраняем его в Redis
-    string rankKey = "RANK-" + id;
-    double rank = CalculateRank(text);
-    db.StringSet(rankKey, rank);
-    _logger.LogDebug($"Rank calculated: {rank}");
-
-    // Проверяем similarity и сохраняем его в Redis
-    string similarityKey = "SIMILARITY-" + id;
-    int similarity = CheckSimilarity(text, db, textKey);
-    db.StringSet(similarityKey, similarity);
-    _logger.LogDebug($"Similarity calculated: {similarity}");
-
-    // Перенаправляем на страницу summary с параметром id
-    return Redirect($"summary?id={id}");
-    }
-
-    private double CalculateRank(string text)
-    {
-        int totalChars = text.Length;
-        int nonAlphabetChars = text.Count(c => !char.IsLetter(c)); // Считаем неалфавитные символы
-        double rank = (double)nonAlphabetChars / totalChars;
-        _logger.LogDebug($"Total chars: {totalChars}, Non-alphabet chars: {nonAlphabetChars}, Rank: {rank}");
-        return rank;
-    }
-
-private int CheckSimilarity(string text, IDatabase db, string currentTextKey)
-{
-    _logger.LogDebug($"Checking similarity for text: '{text}'");
-
-    // Получаем все ключи в базе
-    var keys = db.Multiplexer.GetServer(db.Multiplexer.GetEndPoints()[0]).Keys().ToArray();
-
-    foreach (var key in keys)
-    {
-        // Пропускаем текущее значение
-        if (key.ToString() == currentTextKey)
-            continue;
-
-        var storedText = db.StringGet(key.ToString());
-        _logger.LogDebug($"Stored text: '{storedText}'");
-
-        // Сравниваем тексты
-        bool isEqual = storedText.ToString().Equals(text, StringComparison.Ordinal);
-        _logger.LogDebug($"Comparison result: {isEqual}");
-
-        if (isEqual)
+        if (string.IsNullOrEmpty(text))
         {
-            return 1;
+            return Redirect($"index");
         }
+
+        string similarityKey = "SIMILARITY-" + id;
+        //TODO: посчитать similarity и сохранить в БД по ключу similarityKey
+        double similarity = CalculateSimilarity(text);
+        _db.StringSet(similarityKey, similarity);
+
+        string textKey = "TEXT-" + id;
+        //TODO: сохранить в БД text по ключу textKey
+        _db.StringSet(textKey, text);
+
+        //TODO: посчитать rank и сохранить в БД по ключу rankKey
+        CancellationTokenSource cts = new CancellationTokenSource();
+
+        ConnectionFactory cf = new ConnectionFactory();
+
+        using (IConnection c = cf.CreateConnection())
+        {
+            byte[] data = Encoding.UTF8.GetBytes(id);
+            c.Publish("valuator.processing.rank", data);
+            
+            c.Drain();
+
+            c.Close();
+        }
+
+        cts.Cancel();
+
+        return Redirect($"summary?id={id}");
     }
 
-    return 0; // Если схожих строк не найдено
-}
+    private double CalculateSimilarity(string text)
+    {
+        var allKeys = _redisConnection.GetServer("localhost:6379").Keys();
+        double similarity = 0.0;
+        foreach (var key in allKeys)
+        {
+            if (key.ToString().Substring(0, 4) != "TEXT")
+            {
+                continue;
+            }
+            string dbText = _db.StringGet(key);
+            if (dbText == text)
+            {
+                similarity = 1.0;
+            }
+        }
+        return similarity;
+    }
 }

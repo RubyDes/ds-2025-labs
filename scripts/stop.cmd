@@ -1,8 +1,7 @@
 @echo off
-REM Остановка всех процессов dotnet
-taskkill /f /im dotnet.exe
 
-REM Остановка Nginx
-taskkill /f /im nginx.exe
-
-echo Все компоненты остановлены.
+REM Остановка всех сервисов
+taskkill /F /IM "Valuator.exe" /T
+taskkill /F /IM "nginx.exe" /T
+taskkill /F /IM "RankCalculator.exe" /T
+taskkill /F /IM "nats-server.exe" /T

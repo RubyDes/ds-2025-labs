@@ -1,5 +1,4 @@
 using StackExchange.Redis;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Valuator;
 
@@ -9,25 +8,19 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // Добавляем сервисы в контейнер
+        // Add services to the container.
         builder.Services.AddRazorPages();
+        ConfigurationOptions redisConfiguration = ConfigurationOptions.Parse("localhost:6379");
+        ConnectionMultiplexer redisConnection = ConnectionMultiplexer.Connect(redisConfiguration);
+        builder.Services.AddSingleton<IConnectionMultiplexer>(redisConnection);
 
-        // Регистрируем Redis (подключение)
-        builder.Services.AddSingleton<IConnectionMultiplexer>(provider =>
-        {
-            var configuration = builder.Configuration.GetConnectionString("Redis");
-            return ConnectionMultiplexer.Connect(configuration);
-        });
-
-        //Создает экзмепляр приложения
         var app = builder.Build();
 
-        // Настройка middleware
+        // Configure the HTTP request pipeline.
         if (!app.Environment.IsDevelopment())
         {
             app.UseExceptionHandler("/Error");
         }
-
         app.UseStaticFiles();
 
         app.UseRouting();
@@ -37,12 +30,5 @@ public class Program
         app.MapRazorPages();
 
         app.Run();
-
-        app.Use(async (context, next) =>
-        {
-            Console.WriteLine($"Запрос получен на порту: {context.Connection.LocalPort}");
-            await next();
-        });
-        
     }
 }
